@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'db_helper.dart';
 
 class RegistrationScreen extends StatefulWidget {
-  final Function(Map<String, dynamic>) onUserAdded;
+  final Function onUserAdded;
 
   RegistrationScreen({required this.onUserAdded});
 
@@ -14,29 +14,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
+  final DatabaseHelper dbHelper = DatabaseHelper();
   String? _selectedGender;
   String? _selectedCity;
-  List<String> _selectedHobbies = [];
-  final List<String> _hobbies = ["Reading", "Traveling", "Gaming", "Sports", "Music", "Cooking"];
-  final List<String> _cities = ["Ahemdabad", "Rajkot", "Surat", "Vadodara", "Jamnagar"];
 
-  void _submit() {
+  void _submit() async {
     if (_formKey.currentState!.validate()) {
       final newUser = {
-        "name": _nameController.text.trim(),
-        "email": _emailController.text.trim(),
-        "mobile": _phoneController.text.trim(),
-        "dob": _dobController.text.trim(),
+        "name": _nameController.text,
+        "email": _emailController.text,
+        "mobile": _mobileController.text,
+        "dob": _dobController.text,
         "gender": _selectedGender,
         "city": _selectedCity,
-        "hobbies": _selectedHobbies, // Saving selected hobbies
+        "hobbies": "",
+        "isFavorite": 0,
       };
-
-      print("New User: $newUser"); // Debugging statement to confirm data
-      widget.onUserAdded(newUser);
-
+      await dbHelper.insertUser(newUser);
+      widget.onUserAdded();
       Navigator.pop(context);
     }
   }
@@ -44,36 +41,19 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Add User")
-      ,backgroundColor: Color.fromRGBO(107, 203, 217, 1),),
-      body: SingleChildScrollView(
+      appBar: AppBar(title: Text("Add User"), backgroundColor: Color.fromRGBO(107, 203, 217, 1)),
+      body: Padding(
         padding: EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              _buildTextField(_nameController, "Full Name", Icons.person, r"^[a-zA-Z\s]{3,50}$", "Enter a valid name"),
-              _buildTextField(_emailController, "Email", Icons.email, r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", "Enter a valid email"),
-              _buildTextField(_phoneController, "Mobile Number", Icons.phone, r"^\d{10,15}$", "Enter a valid mobile number"),
-              _buildDateField(),
-              SizedBox(height: 16),
-              _buildGenderSelection(),
-              SizedBox(height: 16),
-              _buildCityDropdown(),
-              SizedBox(height: 16),
-              _buildHobbiesSelection(),
+              _buildTextField(_nameController, "Full Name", Icons.person),
+              _buildTextField(_emailController, "Email", Icons.email),
+              _buildTextField(_mobileController, "Mobile Number", Icons.phone),
+              _buildTextField(_dobController, "Date of Birth", Icons.calendar_today),
               SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _submit,
-                child: Text(
-                  "Save",
-                  style: TextStyle(
-                    color: Color.fromRGBO(107, 203, 217, 1), // Set text color to match the theme
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-              ),
+              ElevatedButton(onPressed: _submit, child: Text("Save")),
             ],
           ),
         ),
@@ -81,117 +61,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon, String pattern, String errorMsg) {
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.symmetric(vertical: 8),
       child: TextFormField(
         controller: controller,
-        decoration: InputDecoration(
-          prefixIcon: Icon(icon),
-          labelText: label,
-          border: OutlineInputBorder(),
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return "$label cannot be empty";
-          }
-          if (!RegExp(pattern).hasMatch(value)) {
-            return errorMsg;
-          }
-          return null;
-        },
+        decoration: InputDecoration(prefixIcon: Icon(icon), labelText: label, border: OutlineInputBorder()),
       ),
-    );
-  }
-
-  Widget _buildDateField() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: TextFormField(
-        controller: _dobController,
-        readOnly: true,
-        decoration: InputDecoration(
-          labelText: "Date of Birth",
-          prefixIcon: Icon(Icons.calendar_today),
-          border: OutlineInputBorder(),
-        ),
-        onTap: () async {
-          DateTime? picked = await showDatePicker(
-            context: context,
-            initialDate: DateTime.now(),
-            firstDate: DateTime(1900),
-            lastDate: DateTime.now(),
-          );
-          if (picked != null) {
-            _dobController.text = DateFormat('dd/MM/yyyy').format(picked);
-          }
-        },
-      ),
-    );
-  }
-
-  Widget _buildGenderSelection() {
-    return DropdownButtonFormField<String>(
-      decoration: InputDecoration(
-        labelText: "Gender",
-        border: OutlineInputBorder(),
-      ),
-      value: _selectedGender,
-      items: ["Male", "Female", "Other"]
-          .map((gender) => DropdownMenuItem(value: gender, child: Text(gender)))
-          .toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedGender = value;
-        });
-      },
-      validator: (value) => value == null ? "Please select a gender" : null,
-    );
-  }
-
-  Widget _buildCityDropdown() {
-    return DropdownButtonFormField<String>(
-      decoration: InputDecoration(
-        labelText: "City",
-        border: OutlineInputBorder(),
-      ),
-      value: _selectedCity,
-      items: _cities
-          .map((city) => DropdownMenuItem(value: city, child: Text(city)))
-          .toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedCity = value;
-        });
-      },
-      validator: (value) => value == null ? "Please select a city" : null,
-    );
-  }
-
-  Widget _buildHobbiesSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Select Hobbies", style: TextStyle(fontWeight: FontWeight.bold)),
-        Wrap(
-          spacing: 10,
-          children: _hobbies.map((hobby) {
-            return FilterChip(
-              label: Text(hobby),
-              selected: _selectedHobbies.contains(hobby),
-              onSelected: (selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedHobbies.add(hobby);
-                  } else {
-                    _selectedHobbies.remove(hobby);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
     );
   }
 }
