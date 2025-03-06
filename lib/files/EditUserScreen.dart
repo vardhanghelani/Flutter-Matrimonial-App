@@ -3,7 +3,7 @@ import 'db_helper.dart';
 
 class EditUserScreen extends StatefulWidget {
   final Map<String, dynamic> user;
-  final Function onSave;
+  final Function(Map<String, dynamic>) onSave;
 
   EditUserScreen({required this.user, required this.onSave});
 
@@ -12,13 +12,15 @@ class EditUserScreen extends StatefulWidget {
 }
 
 class _EditUserScreenState extends State<EditUserScreen> {
-  final DatabaseHelper dbHelper = DatabaseHelper();
   late TextEditingController nameController;
   late TextEditingController emailController;
   late TextEditingController mobileController;
   late TextEditingController dobController;
   late TextEditingController cityController;
   String gender = 'Male';
+  List<String> hobbies = ["Reading", "Traveling", "Gaming", "Sports", "Music", "Cooking"];
+  List<String> selectedHobbies = [];
+  final DatabaseHelper dbHelper = DatabaseHelper();
 
   @override
   void initState() {
@@ -29,10 +31,21 @@ class _EditUserScreenState extends State<EditUserScreen> {
     dobController = TextEditingController(text: widget.user["dob"]);
     cityController = TextEditingController(text: widget.user["city"]);
     gender = widget.user["gender"];
+    selectedHobbies = (widget.user["hobbies"] as String).split(',');
   }
 
-  Future<void> _saveUser() async {
-    final updatedUser = {
+  @override
+  void dispose() {
+    nameController.dispose();
+    emailController.dispose();
+    mobileController.dispose();
+    dobController.dispose();
+    cityController.dispose();
+    super.dispose();
+  }
+
+  void _updateUser() async {
+    Map<String, dynamic> updatedUser = {
       "id": widget.user["id"],
       "name": nameController.text,
       "email": emailController.text,
@@ -40,11 +53,11 @@ class _EditUserScreenState extends State<EditUserScreen> {
       "dob": dobController.text,
       "city": cityController.text,
       "gender": gender,
-      "hobbies": widget.user["hobbies"],
-      "isFavorite": widget.user["isFavorite"],
+      "hobbies": selectedHobbies.join(','),
     };
+
     await dbHelper.updateUser(updatedUser);
-    widget.onSave();
+    widget.onSave(updatedUser);
     Navigator.pop(context);
   }
 
@@ -56,29 +69,54 @@ class _EditUserScreenState extends State<EditUserScreen> {
         padding: EdgeInsets.all(16),
         child: Column(
           children: [
-            _buildTextField(nameController, "Full Name", Icons.person),
-            _buildTextField(emailController, "Email", Icons.email),
-            _buildTextField(mobileController, "Mobile", Icons.phone),
-            _buildTextField(dobController, "Date of Birth", Icons.calendar_today),
-            _buildTextField(cityController, "City", Icons.location_city),
+            TextField(controller: nameController, decoration: InputDecoration(labelText: "Full Name")),
+            SizedBox(height: 10),
+            TextField(controller: emailController, decoration: InputDecoration(labelText: "Email")),
+            SizedBox(height: 10),
+            TextField(controller: mobileController, decoration: InputDecoration(labelText: "Mobile")),
+            SizedBox(height: 10),
+            TextField(controller: dobController, decoration: InputDecoration(labelText: "Date of Birth")),
+            SizedBox(height: 10),
+            TextField(controller: cityController, decoration: InputDecoration(labelText: "City")),
+            SizedBox(height: 10),
             DropdownButtonFormField<String>(
               value: gender,
-              decoration: InputDecoration(labelText: "Gender", border: OutlineInputBorder()),
-              items: ["Male", "Female", "Other"].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+              decoration: InputDecoration(labelText: "Gender"),
+              items: ["Male", "Female", "Other"]
+                  .map((gender) => DropdownMenuItem(value: gender, child: Text(gender)))
+                  .toList(),
               onChanged: (value) => setState(() => gender = value!),
             ),
+            SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              children: hobbies.map((hobby) {
+                bool isSelected = selectedHobbies.contains(hobby);
+                return FilterChip(
+                  label: Text(hobby),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedHobbies.add(hobby);
+                      } else {
+                        selectedHobbies.remove(hobby);
+                      }
+                    });
+                  },
+                  selectedColor: Colors.purple,
+                );
+              }).toList(),
+            ),
             SizedBox(height: 20),
-            ElevatedButton(onPressed: _saveUser, child: Text("Save")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+              onPressed: _updateUser,
+              child: Text("Save", style: TextStyle(color: Colors.white)),
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: TextFormField(controller: controller, decoration: InputDecoration(prefixIcon: Icon(icon), labelText: label, border: OutlineInputBorder())),
     );
   }
 }

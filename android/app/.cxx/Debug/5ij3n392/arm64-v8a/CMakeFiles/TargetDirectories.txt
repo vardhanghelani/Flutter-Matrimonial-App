@@ -1,0 +1,2 @@
+D:/AND Studio/lib/matrimonial/android/app/.cxx/Debug/5ij3n392/arm64-v8a/CMakeFiles/edit_cache.dir
+D:/AND Studio/lib/matrimonial/android/app/.cxx/Debug/5ij3n392/arm64-v8a/CMakeFiles/rebuild_cache.dir

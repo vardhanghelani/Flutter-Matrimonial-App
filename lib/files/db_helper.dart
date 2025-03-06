@@ -15,83 +15,82 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    try {
-      String path = join(await getDatabasesPath(), 'matrimonial.db');
-      return await openDatabase(
-        path,
-        version: 1,
-        onCreate: (db, version) async {
-          await db.execute(
-            """
-            CREATE TABLE users (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              name TEXT,
-              email TEXT UNIQUE,
-              password TEXT,
-              mobile TEXT,
-              dob TEXT,
-              gender TEXT,
-              city TEXT,
-              hobbies TEXT,
-              isFavorite INTEGER
-            )
-            """,
-          );
-        },
-      );
-    } catch (e) {
-      print("Error initializing database: $e");
-      throw Exception("Database initialization failed");
-    }
+    String path = join(await getDatabasesPath(), 'matrimonial.db');
+    return await openDatabase(
+      path,
+      version: 2, // Incremented version for migration
+      onCreate: (db, version) {
+        return db.execute(
+          """
+          CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT UNIQUE,
+            password TEXT,
+            mobile TEXT,
+            dob TEXT,
+            gender TEXT,
+            city TEXT,
+            hobbies TEXT,
+            photo TEXT,  -- ✅ Added photo column
+            isFavorite INTEGER DEFAULT 0
+          )
+          """,
+        );
+      },
+      onUpgrade: (db, oldVersion, newVersion) {
+        if (oldVersion < 2) {
+          db.execute("ALTER TABLE users ADD COLUMN photo TEXT");
+        }
+      },
+    );
   }
 
-  // **1️⃣ Insert a new user into the database**
+  // Insert User
   Future<int> insertUser(Map<String, dynamic> user) async {
     final db = await database;
     return await db.insert('users', user, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  // **2️⃣ Get all users from the database**
+  // Get User by Email
+  Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final db = await database;
+    List<Map<String, dynamic>> result = await db.query('users', where: 'email = ?', whereArgs: [email]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  // Get All Users
   Future<List<Map<String, dynamic>>> getUsers() async {
     final db = await database;
     return await db.query('users');
   }
 
-  // **3️⃣ Get a user by email (for login)**
-  Future<Map<String, dynamic>?> getUserByEmail(String email) async {
-    final db = await database;
-    List<Map<String, dynamic>> result = await db.query('users', where: 'email = ?', whereArgs: [email]);
-    if (result.isNotEmpty) {
-      return result.first;
-    }
-    return null;
-  }
-
-  // **4️⃣ Update user details**
+  // Update User
   Future<int> updateUser(Map<String, dynamic> user) async {
     final db = await database;
-    return await db.update(
-      'users',
-      user,
-      where: 'id = ?',
-      whereArgs: [user['id']],
-    );
+    return await db.update('users', user, where: 'id = ?', whereArgs: [user['id']]);
   }
 
-  // **5️⃣ Delete a user from the database**
+  // Delete User
   Future<int> deleteUser(int id) async {
     final db = await database;
     return await db.delete('users', where: 'id = ?', whereArgs: [id]);
   }
 
-  // **6️⃣ Toggle favorite status**
-  Future<void> toggleFavorite(int id, int isFavorite) async {
+  // Toggle Favorite Status
+  Future<void> toggleFavorite(int id, bool isFavorite) async {
     final db = await database;
     await db.update(
       'users',
-      {'isFavorite': isFavorite == 1 ? 0 : 1},
+      {'isFavorite': isFavorite ? 1 : 0},
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // Get Favorite Users
+  Future<List<Map<String, dynamic>>> getFavoriteUsers() async {
+    final db = await database;
+    return await db.query('users', where: 'isFavorite = ?', whereArgs: [1]);
   }
 }

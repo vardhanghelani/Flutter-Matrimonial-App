@@ -2,10 +2,6 @@ import 'package:flutter/material.dart';
 import 'db_helper.dart';
 
 class FavoriteScreen extends StatefulWidget {
-  final Function onToggleFavorite;
-
-  FavoriteScreen({required this.onToggleFavorite});
-
   @override
   _FavoriteScreenState createState() => _FavoriteScreenState();
 }
@@ -17,44 +13,43 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFavorites();
+    _loadFavoriteUsers();
   }
 
-  Future<void> _loadFavorites() async {
-    final users = await dbHelper.getUsers();
+  // Load favorite users from the database
+  void _loadFavoriteUsers() async {
+    List<Map<String, dynamic>> favUsers = await dbHelper.getFavoriteUsers();
     setState(() {
-      favoriteUsers = users.where((user) => user['isFavorite'] == 1).toList();
+      favoriteUsers = favUsers;
     });
   }
 
-  Future<void> _toggleFavorite(int id) async {
-    final user = favoriteUsers.firstWhere((u) => u['id'] == id);
-    await dbHelper.updateUser({...user, 'isFavorite': user['isFavorite'] == 1 ? 0 : 1});
-    widget.onToggleFavorite();
-    _loadFavorites();
+  // ✅ Toggle favorite status and refresh
+  void _toggleFavorite(int id, bool isFavorite) async {
+    await dbHelper.toggleFavorite(id, !isFavorite);
+    _loadFavoriteUsers();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Favorite Users"), backgroundColor: Color.fromRGBO(107, 203, 217, 1)),
+      appBar: AppBar(title: Text('Favorite Users')),
       body: favoriteUsers.isEmpty
-          ? Center(child: Text("No favorite users yet!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)))
+          ? Center(child: Text("No favorite users yet!"))
           : ListView.builder(
-        padding: EdgeInsets.all(10),
         itemCount: favoriteUsers.length,
         itemBuilder: (context, index) {
           var user = favoriteUsers[index];
           return Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             child: ListTile(
-              leading: CircleAvatar(child: Text(user["name"][0].toUpperCase())),
-              title: Text(user["name"], style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text("Email: ${user["email"]}"),
+              title: Text(user['name']),
+              subtitle: Text(user['email']),
               trailing: IconButton(
-                icon: Icon(Icons.favorite, color: Colors.red),
-                onPressed: () => _toggleFavorite(user["id"]),
+                icon: Icon(
+                  Icons.favorite,
+                  color: Colors.red,
+                ),
+                onPressed: () => _toggleFavorite(user['id'], user['isFavorite'] == 1),
               ),
             ),
           );
