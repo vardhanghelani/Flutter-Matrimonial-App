@@ -7,7 +7,7 @@ class FavoriteScreen extends StatefulWidget {
 }
 
 class _FavoriteScreenState extends State<FavoriteScreen> {
-  final DatabaseHelper dbHelper = DatabaseHelper();
+  final ApiHelper apiHelper = ApiHelper();
   List<Map<String, dynamic>> favoriteUsers = [];
 
   @override
@@ -16,17 +16,17 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
     _loadFavoriteUsers();
   }
 
-  // Load favorite users from the database
+  // Load favorite users from the API
   void _loadFavoriteUsers() async {
-    List<Map<String, dynamic>> favUsers = await dbHelper.getFavoriteUsers();
+    List<Map<String, dynamic>> favUsers = await apiHelper.getFavoriteUsers();
     setState(() {
       favoriteUsers = favUsers;
     });
   }
 
-  // ✅ Toggle favorite status and refresh
-  void _toggleFavorite(int id, bool isFavorite) async {
-    await dbHelper.toggleFavorite(id, !isFavorite);
+  // Toggle favorite status and refresh
+  void _toggleFavorite(String id, bool isFavorite) async {
+    await apiHelper.toggleFavorite(id, !isFavorite);
     _loadFavoriteUsers();
   }
 

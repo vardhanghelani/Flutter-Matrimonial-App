@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'db_helper.dart';
 import 'DashboardScreen.dart';
 import 'signup_screen.dart';
@@ -14,38 +15,74 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   bool showPassword = false;
-  final DatabaseHelper dbHelper = DatabaseHelper();
+  final ApiHelper apiHelper = ApiHelper();
+
+  // Function to show the progress dialog
+  void showProgressDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent closing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text("Logging in..."),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Function to hide the progress dialog
+  void hideProgressDialog() {
+    Navigator.of(context).pop();
+  }
 
   void _signIn() async {
     if (_formKey.currentState!.validate()) {
       String enteredEmail = emailController.text.trim();
       String enteredPassword = passwordController.text.trim();
 
-      Map<String, dynamic>? user = await dbHelper.getUserByEmail(enteredEmail);
+      showProgressDialog(); // Show loading spinner
 
-      if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("User does not exist"), backgroundColor: Colors.red),
-        );
-      } else if (user['password'] != enteredPassword) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Invalid credentials"), backgroundColor: Colors.red),
-        );
-      } else {
-        String userName = user['name'];
+      try {
+        Map<String, dynamic>? user = await apiHelper.getUserByEmail(enteredEmail);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Login Successful!"), backgroundColor: Colors.green),
-        );
-
-        Future.delayed(Duration(seconds: 1), () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MyDashboardScreen(loggedInUserEmail: enteredEmail),
-            ),
+        if (user == null) {
+          hideProgressDialog(); // Hide loading spinner
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("User does not exist"), backgroundColor: Colors.red),
           );
-        });
+        } else if (user['password'] != enteredPassword) {
+          hideProgressDialog();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Invalid credentials"), backgroundColor: Colors.red),
+          );
+        } else {
+          SharedPreferences prefs = await SharedPreferences.getInstance();
+          await prefs.setString('loggedInUserEmail', enteredEmail);
+
+          hideProgressDialog();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Login Successful!"), backgroundColor: Colors.green),
+          );
+
+          Future.delayed(Duration(seconds: 1), () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => MyDashboardScreen(loggedInUserEmail: enteredEmail)),
+            );
+          });
+        }
+      } catch (e) {
+        hideProgressDialog();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("An error occurred. Please try again."), backgroundColor: Colors.red),
+        );
+        print("Login Error: $e");
       }
     }
   }
@@ -72,7 +109,10 @@ class _LoginScreenState extends State<LoginScreen> {
               style: GoogleFonts.poppins(fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 5),
-            Text("Login to continue", style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70)),
+            Text(
+              "Login to continue",
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70),
+            ),
             SizedBox(height: 30),
             Container(
               margin: EdgeInsets.symmetric(horizontal: 30),
@@ -91,14 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       decoration: InputDecoration(
                         labelText: "Email",
                         prefixIcon: Icon(Icons.email, color: Color(0xFF6A5AE0)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return "Please enter your email";
-                        }
-                        return null;
-                      },
+                      validator: (value) => value!.isEmpty ? "Please enter your email" : null,
                     ),
                     SizedBox(height: 15),
                     TextFormField(
@@ -108,21 +142,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         labelText: "Password",
                         prefixIcon: Icon(Icons.lock, color: Color(0xFF6A5AE0)),
                         suffixIcon: IconButton(
-                          icon: Icon(showPassword ? Icons.visibility : Icons.visibility_off, color: Color(0xFF6A5AE0)),
-                          onPressed: () {
-                            setState(() {
-                              showPassword = !showPassword;
-                            });
-                          },
+                          icon: Icon(
+                            showPassword ? Icons.visibility : Icons.visibility_off,
+                            color: Color(0xFF6A5AE0),
+                          ),
+                          onPressed: () => setState(() => showPassword = !showPassword),
                         ),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return "Please enter your password";
-                        }
-                        return null;
-                      },
+                      validator: (value) => value!.isEmpty ? "Please enter your password" : null,
                     ),
                     SizedBox(height: 15),
                     ElevatedButton(
@@ -130,25 +157,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(horizontal: 80, vertical: 15),
                         backgroundColor: Color(0xFF6A5AE0),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: Text("Sign in", style: TextStyle(fontSize: 18)),
+                      child: Text("Sign in", style: TextStyle(fontSize: 18,color: Colors.white)),
                     ),
                     SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text("Don't have an account? "),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => SignupScreen()),
-                            );
-                          },
-                          child: Text("Register Here", style: TextStyle(color: Color(0xFF6A5AE0))),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => SignupScreen()),
+                        );
+                      },
+                      child: Text(
+                        "Don't have an account? Sign Up",
+                        style: TextStyle(
+                          color: Color(0xFF6A5AE0),
+                          fontWeight: FontWeight.bold,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),

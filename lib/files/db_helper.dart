@@ -1,96 +1,164 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io';
+import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart';
+import 'package:image_picker/image_picker.dart';
 
-class DatabaseHelper {
-  static final DatabaseHelper _instance = DatabaseHelper._internal();
-  factory DatabaseHelper() => _instance;
-  DatabaseHelper._internal();
+class ApiHelper {
+  static final ApiHelper _instance = ApiHelper._internal();
+  factory ApiHelper() => _instance;
+  ApiHelper._internal();
 
-  static Database? _database;
+  final String baseUrl = 'https://67c9259a0acf98d07088ffee.mockapi.io/users';
+  final ImagePicker _imagePicker = ImagePicker();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
-  }
-
-  Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), 'matrimonial.db');
-    return await openDatabase(
-      path,
-      version: 2, // Incremented version for migration
-      onCreate: (db, version) {
-        return db.execute(
-          """
-          CREATE TABLE users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            email TEXT UNIQUE,
-            password TEXT,
-            mobile TEXT,
-            dob TEXT,
-            gender TEXT,
-            city TEXT,
-            hobbies TEXT,
-            photo TEXT,  -- ✅ Added photo column
-            isFavorite INTEGER DEFAULT 0
-          )
-          """,
-        );
-      },
-      onUpgrade: (db, oldVersion, newVersion) {
-        if (oldVersion < 2) {
-          db.execute("ALTER TABLE users ADD COLUMN photo TEXT");
-        }
-      },
+  // Pick image from gallery or camera
+  Future<File?> pickImage({bool fromCamera = false}) async {
+    final source = fromCamera ? ImageSource.camera : ImageSource.gallery;
+    final XFile? pickedFile = await _imagePicker.pickImage(
+      source: source,
+      imageQuality: 85,
     );
+
+    if (pickedFile != null) {
+      return File(pickedFile.path);
+    }
+    return null;
   }
 
   // Insert User
-  Future<int> insertUser(Map<String, dynamic> user) async {
-    final db = await database;
-    return await db.insert('users', user, conflictAlgorithm: ConflictAlgorithm.replace);
+  Future<http.Response> insertUser(Map<String, dynamic> user, {File? imageFile}) async {
+    if (imageFile != null) {
+      // Store the local path
+      user['imagePath'] = imageFile.path;
+
+      // Also upload to server if needed
+      final imageUrl = await uploadImage(imageFile);
+      if (imageUrl != null) {
+        user['image'] = imageUrl;
+      }
+    }
+
+    final response = await http.post(
+      Uri.parse(baseUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(user),
+    );
+    return response;
+  }
+
+  // Upload Image and return the URL
+  Future<String?> uploadImage(File imageFile) async {
+    var request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/upload'),
+    );
+
+    var fileStream = http.ByteStream(imageFile.openRead());
+    var fileLength = await imageFile.length();
+
+    var multipartFile = http.MultipartFile(
+      'image',
+      fileStream,
+      fileLength,
+      filename: basename(imageFile.path),
+      contentType: MediaType('image', 'jpeg'),
+    );
+
+    request.files.add(multipartFile);
+    var streamedResponse = await request.send();
+    var response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      var data = json.decode(response.body);
+      return data['imageUrl'];
+    } else {
+      return null;
+    }
+  }
+
+  // Update User with Image
+  Future<http.Response> updateUser(String id, Map<String, dynamic> user, {File? imageFile}) async {
+    if (imageFile != null) {
+      // Store the local path
+      user['imagePath'] = imageFile.path;
+
+      // Also upload to server if needed
+      final imageUrl = await uploadImage(imageFile);
+      if (imageUrl != null) {
+        user['image'] = imageUrl;
+      }
+    }
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(user),
+    );
+    return response;
+  }
+
+  // Get image from path
+  File? getImageFromPath(String? path) {
+    if (path == null) return null;
+    final file = File(path);
+    if (file.existsSync()) {
+      return file;
+    }
+    return null;
+  }
+
+  // Get User by ID
+  Future<Map<String, dynamic>?> getUserById(String id) async {
+    final response = await http.get(Uri.parse('$baseUrl/$id'));
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    return null;
   }
 
   // Get User by Email
   Future<Map<String, dynamic>?> getUserByEmail(String email) async {
-    final db = await database;
-    List<Map<String, dynamic>> result = await db.query('users', where: 'email = ?', whereArgs: [email]);
-    return result.isNotEmpty ? result.first : null;
+    final response = await http.get(Uri.parse('$baseUrl?email=$email'));
+    if (response.statusCode == 200) {
+      List users = json.decode(response.body);
+      return users.isNotEmpty ? users.first : null;
+    }
+    return null;
   }
 
   // Get All Users
   Future<List<Map<String, dynamic>>> getUsers() async {
-    final db = await database;
-    return await db.query('users');
-  }
-
-  // Update User
-  Future<int> updateUser(Map<String, dynamic> user) async {
-    final db = await database;
-    return await db.update('users', user, where: 'id = ?', whereArgs: [user['id']]);
+    final response = await http.get(Uri.parse(baseUrl));
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    }
+    return [];
   }
 
   // Delete User
-  Future<int> deleteUser(int id) async {
-    final db = await database;
-    return await db.delete('users', where: 'id = ?', whereArgs: [id]);
+  Future<http.Response> deleteUser(String id) async {
+    final response = await http.delete(Uri.parse('$baseUrl/$id'));
+    return response;
   }
 
   // Toggle Favorite Status
-  Future<void> toggleFavorite(int id, bool isFavorite) async {
-    final db = await database;
-    await db.update(
-      'users',
-      {'isFavorite': isFavorite ? 1 : 0},
-      where: 'id = ?',
-      whereArgs: [id],
+  Future<http.Response> toggleFavorite(String id, bool isFavorite) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'isFavorite': isFavorite ? 1 : 0}),
     );
+    return response;
   }
 
   // Get Favorite Users
   Future<List<Map<String, dynamic>>> getFavoriteUsers() async {
-    final db = await database;
-    return await db.query('users', where: 'isFavorite = ?', whereArgs: [1]);
+    final response = await http.get(Uri.parse('$baseUrl?isFavorite=1'));
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    }
+    return [];
   }
 }

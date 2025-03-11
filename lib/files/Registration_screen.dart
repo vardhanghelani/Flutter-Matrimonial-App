@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'db_helper.dart';
 
 class RegistrationScreen extends StatefulWidget {
-  final Function(Map<String, dynamic>) onUserAdded;
+  final VoidCallback onUserAdded;
 
   RegistrationScreen({required this.onUserAdded});
 
@@ -25,20 +26,52 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   File? _selectedImage;
 
   List<String> genderOptions = ["Male", "Female", "Other"];
-  List<String> cityOptions = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"];
+  List<String> cityOptions = ["Rajkot", "Ahemdabad", "Surat", "Morbi", "Vadodra"];
   List<String> hobbies = ["Reading", "Traveling", "Gaming", "Sports", "Music", "Cooking"];
   List<String> selectedHobbies = [];
+
+  final ApiHelper apiHelper = ApiHelper();
 
   /// **📸 Select Image (Camera/Gallery)**
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _selectedImage = File(pickedFile.path);
-      });
-    }
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: Icon(Icons.photo_camera),
+                title: Text('Take a photo'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final pickedFile = await picker.pickImage(source: ImageSource.camera);
+                  if (pickedFile != null) {
+                    setState(() {
+                      _selectedImage = File(pickedFile.path);
+                    });
+                  }
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.photo_library),
+                title: Text('Choose from gallery'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                  if (pickedFile != null) {
+                    setState(() {
+                      _selectedImage = File(pickedFile.path);
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// **📅 Show Date Picker**
@@ -50,9 +83,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
     DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: initialDate, // Start from selected date if available
+      initialDate: initialDate,
       firstDate: DateTime(now.year - 80),
       lastDate: DateTime(now.year - 18),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.indigo,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null) {
@@ -103,8 +148,19 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
   }
 
-  void _submitForm() {
+  void _submitForm() async {
     if (_formKey.currentState!.validate()) {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return Center(
+            child: CircularProgressIndicator(),
+          );
+        },
+      );
+
       Map<String, dynamic> newUser = {
         "name": _fullNameController.text,
         "email": _emailController.text,
@@ -116,125 +172,383 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         "photo": _selectedImage?.path ?? "",
       };
 
-      widget.onUserAdded(newUser);
-      Navigator.pop(context);
+      try {
+        final response = await apiHelper.insertUser(newUser);
+
+        // Close loading dialog
+        Navigator.pop(context);
+
+        if (response.statusCode == 201) {
+          widget.onUserAdded();
+          Navigator.pop(context);
+
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Registration successful!"),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to register user"),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        // Close loading dialog
+        Navigator.pop(context);
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("An error occurred: $e"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Registration")),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                /// **📸 Photo Selection**
-                Center(
-                  child: GestureDetector(
-                    onTap: _pickImage,
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Colors.grey[300],
-                      backgroundImage: _selectedImage != null
-                          ? FileImage(_selectedImage!)
-                          : null,
-                      child: _selectedImage == null
-                          ? Icon(Icons.camera_alt, size: 40, color: Colors.white)
-                          : null,
+      appBar: AppBar(
+        title: Text("Create Account", style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.indigo.withOpacity(0.2), Colors.white],
+            stops: [0.0, 0.3],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  /// **📸 Photo Selection**
+                  Center(
+                    child: Stack(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.indigo, width: 3),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 10,
+                                offset: Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: CircleAvatar(
+                            radius: 60,
+                            backgroundColor: Colors.grey[200],
+                            backgroundImage: _selectedImage != null
+                                ? FileImage(_selectedImage!)
+                                : null,
+                            child: _selectedImage == null
+                                ? Icon(Icons.person, size: 50, color: Colors.grey[400])
+                                : null,
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: _pickImage,
+                            child: Container(
+                              padding: EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.indigo,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: Icon(
+                                Icons.camera_alt,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                SizedBox(height: 20),
+                  SizedBox(height: 30),
 
-                /// **📌 Full Name Field**
-                TextFormField(
-                  controller: _fullNameController,
-                  decoration: InputDecoration(labelText: "Full Name"),
-                  validator: _validateFullName,
-                ),
-                SizedBox(height: 10),
-
-                /// **📌 Email Field**
-                TextFormField(
-                  controller: _emailController,
-                  decoration: InputDecoration(labelText: "Email"),
-                  validator: _validateEmail,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                SizedBox(height: 10),
-
-                /// **📌 Mobile Number Field**
-                TextFormField(
-                  controller: _mobileController,
-                  decoration: InputDecoration(labelText: "Mobile Number"),
-                  validator: _validateMobile,
-                  keyboardType: TextInputType.phone,
-                ),
-                SizedBox(height: 10),
-
-                /// **📅 Date of Birth**
-                TextFormField(
-                  controller: _dobController,
-                  decoration: InputDecoration(
-                    labelText: "Date of Birth",
-                    suffixIcon: Icon(Icons.calendar_today),
+                  // Section Header
+                  Text(
+                    "Personal Information",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.indigo[800],
+                    ),
                   ),
-                  readOnly: true,
-                  onTap: () => _selectDate(context), // Open Date Picker directly
-                  validator: _validateDOB,
-                ),
-                SizedBox(height: 10),
+                  Divider(color: Colors.indigo[200]),
+                  SizedBox(height: 10),
 
-                /// **📌 Gender Selection**
-                DropdownButtonFormField<String>(
-                  value: _selectedGender,
-                  decoration: InputDecoration(labelText: "Gender"),
-                  items: genderOptions.map((gender) {
-                    return DropdownMenuItem(value: gender, child: Text(gender));
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedGender = value),
-                  validator: (value) => value == null ? "Select gender" : null,
-                ),
-                SizedBox(height: 10),
+                  /// **📌 Full Name Field**
+                  TextFormField(
+                    controller: _fullNameController,
+                    decoration: InputDecoration(
+                      labelText: "Full Name",
+                      prefixIcon: Icon(Icons.person, color: Colors.indigo),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: _validateFullName,
+                  ),
+                  SizedBox(height: 15),
 
-                /// **📌 City Selection**
-                DropdownButtonFormField<String>(
-                  value: _selectedCity,
-                  decoration: InputDecoration(labelText: "City"),
-                  items: cityOptions.map((city) {
-                    return DropdownMenuItem(value: city, child: Text(city));
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedCity = value),
-                ),
-                SizedBox(height: 10),
+                  /// **📌 Email Field**
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      labelText: "Email",
+                      prefixIcon: Icon(Icons.email, color: Colors.indigo),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: _validateEmail,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  SizedBox(height: 15),
 
-                /// **📌 Hobbies Selection**
-                Wrap(
-                  spacing: 10,
-                  children: hobbies.map((hobby) {
-                    return FilterChip(
-                      label: Text(hobby),
-                      selected: selectedHobbies.contains(hobby),
-                      onSelected: (selected) {
-                        setState(() {
-                          selected
-                              ? selectedHobbies.add(hobby)
-                              : selectedHobbies.remove(hobby);
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-                SizedBox(height: 20),
+                  /// **📌 Mobile Number Field**
+                  TextFormField(
+                    controller: _mobileController,
+                    decoration: InputDecoration(
+                      labelText: "Mobile Number",
+                      prefixIcon: Icon(Icons.phone, color: Colors.indigo),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: _validateMobile,
+                    maxLength: 10,
+                    keyboardType: TextInputType.phone,
+                  ),
+                  SizedBox(height: 15),
 
-                /// **✅ Submit Button**
-                ElevatedButton(onPressed: _submitForm, child: Text("Register")),
-              ],
+                  /// **📅 Date of Birth**
+                  TextFormField(
+                    controller: _dobController,
+                    decoration: InputDecoration(
+                      labelText: "Date of Birth",
+                      prefixIcon: Icon(Icons.calendar_today, color: Colors.indigo),
+                      suffixIcon: IconButton(
+                        icon: Icon(Icons.calendar_month, color: Colors.indigo),
+                        onPressed: () => _selectDate(context),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    readOnly: true,
+                    onTap: () => _selectDate(context),
+                    validator: _validateDOB,
+                  ),
+                  SizedBox(height: 25),
+
+                  // Section Header
+                  Text(
+                    "Additional Information",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.indigo[800],
+                    ),
+                  ),
+                  Divider(color: Colors.indigo[200]),
+                  SizedBox(height: 10),
+
+                  /// **📌 Gender Selection**
+                  DropdownButtonFormField<String>(
+                    value: _selectedGender,
+                    decoration: InputDecoration(
+                      labelText: "Gender",
+                      prefixIcon: Icon(Icons.people, color: Colors.indigo),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    items: genderOptions.map((gender) {
+                      return DropdownMenuItem(value: gender, child: Text(gender));
+                    }).toList(),
+                    onChanged: (value) => setState(() => _selectedGender = value),
+                    validator: (value) => value == null ? "Select gender" : null,
+                    icon: Icon(Icons.arrow_drop_down_circle, color: Colors.indigo),
+                  ),
+                  SizedBox(height: 15),
+
+                  /// **📌 City Selection**
+                  DropdownButtonFormField<String>(
+                    value: _selectedCity,
+                    decoration: InputDecoration(
+                      labelText: "City",
+                      prefixIcon: Icon(Icons.location_city, color: Colors.indigo),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.indigo, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    items: cityOptions.map((city) {
+                      return DropdownMenuItem(value: city, child: Text(city));
+                    }).toList(),
+                    onChanged: (value) => setState(() => _selectedCity = value),
+                    validator: (value) => value == null ? "Select city" : null,
+                    icon: Icon(Icons.arrow_drop_down_circle, color: Colors.indigo),
+                  ),
+                  SizedBox(height: 20),
+
+                  // Hobbies Header
+                  Text(
+                    "Hobbies",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.indigo[700],
+                    ),
+                  ),
+                  SizedBox(height: 5),
+
+                  /// **📌 Hobbies Selection**
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: hobbies.map((hobby) {
+                      return FilterChip(
+                        label: Text(hobby),
+                        selected: selectedHobbies.contains(hobby),
+                        selectedColor: Colors.indigo.withOpacity(0.2),
+                        checkmarkColor: Colors.indigo,
+                        backgroundColor: Colors.grey[100],
+                        labelStyle: TextStyle(
+                          color: selectedHobbies.contains(hobby)
+                              ? Colors.indigo[800]
+                              : Colors.black87,
+                          fontWeight: selectedHobbies.contains(hobby)
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: selectedHobbies.contains(hobby)
+                                ? Colors.indigo
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        onSelected: (selected) {
+                          setState(() {
+                            selected
+                                ? selectedHobbies.add(hobby)
+                                : selectedHobbies.remove(hobby);
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  SizedBox(height: 30),
+
+                  /// **✅ Submit Button**
+                  Container(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: _submitForm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                      child: Text(
+                        "CREATE ACCOUNT",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 30),
+                ],
+              ),
             ),
           ),
         ),
