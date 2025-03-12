@@ -173,7 +173,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       };
 
       try {
-        final response = await apiHelper.insertUser(newUser);
+        final response = await apiHelper.insertUser(newUser, imageFile: _selectedImage);
 
         // Close loading dialog
         Navigator.pop(context);

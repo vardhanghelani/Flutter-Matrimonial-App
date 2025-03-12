@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:matrimonial/files/match_making_screen.dart';
 import 'Registration_screen.dart';
 import 'Userlist_screen.dart';
+import 'dart:convert';
 import 'About_us.dart';
 import 'My_profille_screen.dart';
 import 'db_helper.dart';
 import 'login_screen.dart';
+import 'package:http/http.dart' as http;
 import 'Fav_user.dart'; // Re-adding import for FavoriteScreen
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
@@ -36,14 +38,57 @@ class _MyDashboardScreenState extends State<MyDashboardScreen> {
   }
 
   Future<void> _fetchUserName() async {
-    Map<String, dynamic>? user = await apiHelper.getUserByEmail(widget.loggedInUserEmail);
-    if (user != null) {
+    try {
+      print("Fetching user with email: ${widget.loggedInUserEmail}"); // Debug log
+      final response = await http.get(Uri.parse('${apiHelper.baseUrl}?email=${widget.loggedInUserEmail}'));
+
+      if (response.statusCode == 200) {
+        List<dynamic> users = json.decode(response.body);
+        print("Decoded users: $users"); // Debug log
+
+        if (users.isNotEmpty) {
+          // Get the first user that matches the email
+          Map<String, dynamic> user = users.first;
+          setState(() {
+            userName = user['name'] ?? "User";
+            print("Username set to: $userName"); // Debug log
+          });
+        } else {
+          // If no user found with that email
+          setState(() {
+            userName = "User Not Found";
+            print("No user found with email: ${widget.loggedInUserEmail}"); // Debug log
+          });
+        }
+      } else {
+        print("Failed API response: ${response.statusCode}");
+        // Fallback to getting all users
+        _fetchUserNameFallback();
+      }
+    } catch (e) {
+      print("Error in _fetchUserName: $e"); // Debug log
+      _fetchUserNameFallback();
+    }
+  }
+
+// Fallback method if the direct query fails
+  Future<void> _fetchUserNameFallback() async {
+    try {
+      print("Using fallback method to find user"); // Debug log
+      final allUsers = await apiHelper.getUsers();
+      final matchingUser = allUsers.firstWhere(
+            (u) => u['email'] == widget.loggedInUserEmail,
+        orElse: () => {"name": "Unknown User"},
+      );
+
       setState(() {
-        userName = user['name'] ?? "User"; // Use stored name or default
+        userName = matchingUser['name'];
+        print("Username set using fallback method: $userName"); // Debug log
       });
-    } else {
+    } catch (e) {
+      print("Error in fallback method: $e");
       setState(() {
-        userName = "Unknown User"; // Fallback in case of error
+        userName = "Error Loading";
       });
     }
   }
@@ -170,15 +215,15 @@ class _MyDashboardScreenState extends State<MyDashboardScreen> {
                       ),
                       _buildGridItem(
                           context,
-                          Icons.person_rounded,
-                          "Match making",
-                          "Matches made",
+                          Icons.favorite_sharp,
+                          "Favourite Screen",
+                          "favourite users",
                           Colors.teal,
                               () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => MatchmakingScreen(),
+                                builder: (context) => FavoritesScreen(loggedInUserEmail: widget.loggedInUserEmail),
                               ),
                             );
                           }
@@ -297,7 +342,7 @@ class _MyDashboardScreenState extends State<MyDashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => FavoriteScreen(),
+                    builder: (context) => FavoritesScreen(loggedInUserEmail: widget.loggedInUserEmail),
                   ),
                 );
               },

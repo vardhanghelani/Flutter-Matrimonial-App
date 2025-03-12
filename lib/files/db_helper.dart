@@ -28,6 +28,7 @@ class ApiHelper {
   }
 
   // Insert User
+  // Insert User
   Future<http.Response> insertUser(Map<String, dynamic> user, {File? imageFile}) async {
     if (imageFile != null) {
       // Store the local path
@@ -120,12 +121,23 @@ class ApiHelper {
 
   // Get User by Email
   Future<Map<String, dynamic>?> getUserByEmail(String email) async {
-    final response = await http.get(Uri.parse('$baseUrl?email=$email'));
-    if (response.statusCode == 200) {
-      List users = json.decode(response.body);
-      return users.isNotEmpty ? users.first : null;
+    try {
+      print("Fetching user with email: $email"); // Debug log
+      final response = await http.get(Uri.parse('$baseUrl?email=$email'));
+      print("Response status code: ${response.statusCode}"); // Debug log
+      print("Response body: ${response.body}"); // Debug log
+
+      if (response.statusCode == 200) {
+        List users = json.decode(response.body);
+        print("Decoded users: $users"); // Debug log
+        print("Users length: ${users.length}"); // Debug log
+        return users.isNotEmpty ? users.first : null;
+      }
+      return null;
+    } catch (e) {
+      print("Error in getUserByEmail: $e"); // Debug log
+      return null;
     }
-    return null;
   }
 
   // Get All Users

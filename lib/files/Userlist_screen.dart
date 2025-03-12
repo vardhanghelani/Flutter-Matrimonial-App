@@ -13,78 +13,82 @@ class UserListScreen extends StatefulWidget {
   _UserListScreenState createState() => _UserListScreenState();
 }
 
-class _UserListScreenState extends State<UserListScreen> with SingleTickerProviderStateMixin {
+class _UserListScreenState extends State<UserListScreen> {
   final ApiHelper apiHelper = ApiHelper();
   List<Map<String, dynamic>> users = [];
   List<Map<String, dynamic>> filteredUsers = [];
   bool isLoading = true;
   bool isSearching = false;
   TextEditingController searchController = TextEditingController();
-  TabController? _tabController;
-  String activeFilter = "All";
+  // Track which user is having their favorite status updated
+  String? updatingFavoriteForUserId;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadUsers();
-
-    // Listen to tab changes
-    _tabController!.addListener(() {
-      if (!_tabController!.indexIsChanging) {
-        setState(() {
-          activeFilter = _tabController!.index == 0 ? "All" : "Favorites";
-          _filterUsers();
-        });
-      }
-    });
   }
 
   @override
   void dispose() {
-    _tabController?.dispose();
     searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadUsers() async {
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
-      List<Map<String, dynamic>> fetchedUsers = await apiHelper.getUsers();
+      final fetchedUsers = await apiHelper.getUsers();
       setState(() {
         users = fetchedUsers.where((user) => user['email'] != widget.loggedInUserEmail).toList();
         _filterUsers();
         isLoading = false;
       });
     } catch (e) {
+      setState(() => isLoading = false);
+      _showSnackBar("Error loading users: $e", Colors.red);
+    }
+  }
+
+  void _toggleFavorite(String id, bool currentStatus) async {
+    // Set the updating state for this specific user
+    setState(() {
+      updatingFavoriteForUserId = id;
+    });
+
+    try {
+      final newStatus = currentStatus ? 0 : 1;
+      await apiHelper.updateUser(id, {'isFavorite': newStatus});
+
       setState(() {
-        isLoading = false;
+        for (int i = 0; i < users.length; i++) {
+          if (users[i]['id'] == id) {
+            users[i]['isFavorite'] = newStatus;
+            break;
+          }
+        }
+        _filterUsers();
+        // Clear the updating state
+        updatingFavoriteForUserId = null;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error loading users: $e"),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      _showSnackBar(
+          newStatus == 1 ? "Added to favorites" : "Removed from favorites",
+          newStatus == 1 ? Colors.green : Colors.blue
       );
+    } catch (e) {
+      setState(() {
+        // Clear the updating state in case of error too
+        updatingFavoriteForUserId = null;
+      });
+      _showSnackBar("Failed to update favorite status", Colors.red);
     }
   }
 
   void _filterUsers() {
-    if (activeFilter == "All") {
-      filteredUsers = List.from(users);
-    } else {
-      filteredUsers = users.where((user) => user['isFavorite'] == 1).toList();
-    }
+    filteredUsers = List.from(users);
 
-    // Apply search filter if searching
     if (isSearching && searchController.text.isNotEmpty) {
       final query = searchController.text.toLowerCase();
       filteredUsers = filteredUsers.where((user) {
@@ -97,15 +101,11 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
   }
 
   void _editUser(String id, Map<String, dynamic> updatedUser) async {
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
       await apiHelper.updateUser(id, updatedUser);
 
-      // Update the local user list with the edited user data
-      // This ensures image changes are reflected immediately
       setState(() {
         for (int i = 0; i < users.length; i++) {
           if (users[i]['id'] == id) {
@@ -117,31 +117,10 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
         isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("User updated successfully"),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      _showSnackBar("User updated successfully", Colors.green);
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to update user"),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      setState(() => isLoading = false);
+      _showSnackBar("Failed to update user", Colors.red);
     }
   }
 
@@ -169,39 +148,15 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(context);
-                setState(() {
-                  isLoading = true;
-                });
+                setState(() => isLoading = true);
 
                 try {
                   await apiHelper.deleteUser(id);
                   _loadUsers();
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("User deleted successfully"),
-                      backgroundColor: Colors.green,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
+                  _showSnackBar("User deleted successfully", Colors.green);
                 } catch (e) {
-                  setState(() {
-                    isLoading = false;
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Failed to delete user"),
-                      backgroundColor: Colors.red,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
+                  setState(() => isLoading = false);
+                  _showSnackBar("Failed to delete user", Colors.red);
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -219,45 +174,37 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
     );
   }
 
-  void _toggleLike(String id, bool isFavorite) async {
-    bool newFavoriteStatus = !isFavorite;
-
-    try {
-      await apiHelper.updateUser(id, {'isFavorite': newFavoriteStatus ? 1 : 0});
-
-      setState(() {
-        for (var user in users) {
-          if (user['id'] == id) {
-            user['isFavorite'] = newFavoriteStatus ? 1 : 0;
-            break;
-          }
-        }
-        _filterUsers();
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to update favorite status"),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-    }
-  }
-
   int? _calculateAge(String? dob) {
     if (dob == null || dob.isEmpty) return null;
+
     try {
-      DateTime birthDate = DateFormat("yyyy-MM-dd").parse(dob);
+      DateTime birthDate;
+
+      // Try different date formats
+      List<String> parts = dob.split('/');
+      if (parts.length == 3) {
+        // DD/MM/YYYY format
+        int day = int.parse(parts[0]);
+        int month = int.parse(parts[1]);
+        int year = int.parse(parts[2]);
+        birthDate = DateTime(year, month, day);
+      } else {
+        // Try standard formats
+        try {
+          birthDate = DateFormat("yyyy-MM-dd").parse(dob);
+        } catch (_) {
+          birthDate = DateTime.parse(dob);
+        }
+      }
+
       DateTime today = DateTime.now();
       int age = today.year - birthDate.year;
-      if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+      if (today.month < birthDate.month ||
+          (today.month == birthDate.month && today.day < birthDate.day)) {
         age--;
       }
-      return age;
+
+      return age > 0 ? age : null;
     } catch (e) {
       return null;
     }
@@ -288,7 +235,7 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
       }
     }
 
-    // Fallback to UI Avatars API for a generated avatar
+    // Fallback to UI Avatars API
     return Image.network(
       'https://ui-avatars.com/api/?name=${Uri.encodeComponent(user['name'])}&background=random',
       width: size,
@@ -318,7 +265,17 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
 
   void _showUserDetails(Map<String, dynamic> user) {
     int? age = _calculateAge(user['dob']);
-    bool isFavorite = user['isFavorite'] == 1;
+
+    // Format DOB if available
+    String formattedDob = 'N/A';
+    if (user['dob'] != null && user['dob'].toString().isNotEmpty) {
+      try {
+        DateTime birthDate = DateFormat("yyyy-MM-dd").parse(user['dob']);
+        formattedDob = DateFormat("MMMM d, yyyy").format(birthDate);
+      } catch (e) {
+        formattedDob = user['dob'];
+      }
+    }
 
     showDialog(
       context: context,
@@ -328,161 +285,178 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
             borderRadius: BorderRadius.circular(20),
           ),
           elevation: 8,
-          child: Container(
-            padding: EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    Column(
-                      children: [
+          child: SingleChildScrollView(
+            child: Container(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Column(
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.indigo, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 10,
+                              offset: Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: _getUserImage(user, 100),
+                        ),
+                      ),
+                      SizedBox(height: 15),
+                      Text(
+                        user['name'],
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.indigo[800]),
+                        textAlign: TextAlign.center,
+                      ),
+                      Text(
+                        user['email'],
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 5),
+                      if (age != null)
                         Container(
-                          width: 100,
-                          height: 100,
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.indigo, width: 3),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 10,
-                                offset: Offset(0, 5),
-                              ),
-                            ],
+                            color: Colors.indigo.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(color: Colors.indigo.withOpacity(0.3)),
                           ),
-                          child: ClipOval(
-                            child: _getUserImage(user, 100),
+                          child: Text(
+                            "$age years old",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.indigo,
+                            ),
                           ),
                         ),
-                        SizedBox(height: 15),
+                    ],
+                  ),
+                  SizedBox(height: 20),
+                  Divider(),
+                  SizedBox(height: 10),
+
+                  // User details in grid format
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              Icons.location_city,
+                              "City",
+                              user['city'] ?? 'N/A',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              Icons.wc,
+                              "Gender",
+                              user['gender'] ?? 'N/A',
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDetailItem(
+                              Icons.phone,
+                              "Mobile",
+                              user['mobile'] ?? 'N/A',
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildDetailItem(
+                              Icons.cake,
+                              "Date of Birth",
+                              formattedDob,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 20),
+
+                  if (user['hobbies'] != null && user['hobbies'].toString().isNotEmpty)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          user['name'],
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.indigo[800]),
-                          textAlign: TextAlign.center,
+                          "Hobbies",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.indigo,
+                          ),
                         ),
-                        Text(
-                          user['email'],
-                          style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 5),
-                        if (age != null)
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.indigo.withOpacity(0.1),
+                        SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: (user['hobbies'] as String)
+                              .split(',')
+                              .map((hobby) => Chip(
+                            label: Text(hobby.trim()),
+                            backgroundColor: Colors.indigo.withOpacity(0.1),
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(15),
-                              border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+                              side: BorderSide(color: Colors.indigo.withOpacity(0.3)),
                             ),
-                            child: Text(
-                              "$age years old",
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.indigo,
-                              ),
-                            ),
-                          ),
+                          ))
+                              .toList(),
+                        ),
                       ],
                     ),
-                    IconButton(
-                      icon: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorite ? Colors.red : Colors.grey,
-                        size: 30,
-                      ),
-                      onPressed: () {
-                        _toggleLike(user['id'], isFavorite);
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ],
-                ),
-                SizedBox(height: 20),
-                Divider(),
-                SizedBox(height: 10),
 
-                // User details in attractive format
-                IntrinsicHeight(
-                  child: Row(
+                  SizedBox(height: 20),
+
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _buildDetailColumn(Icons.location_city, "City", user['city'] ?? 'N/A'),
-                      VerticalDivider(thickness: 1),
-                      _buildDetailColumn(Icons.wc, "Gender", user['gender'] ?? 'N/A'),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 20),
-
-                if (user['hobbies'] != null && user['hobbies'].toString().isNotEmpty)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Hobbies",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.indigo,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: (user['hobbies'] as String)
-                            .split(',')
-                            .map((hobby) => Chip(
-                          label: Text(hobby.trim()),
-                          backgroundColor: Colors.indigo.withOpacity(0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                            side: BorderSide(color: Colors.indigo.withOpacity(0.3)),
-                          ),
-                        ))
-                            .toList(),
-                      ),
-                    ],
-                  ),
-
-                SizedBox(height: 20),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildActionButton(
-                      icon: Icons.edit,
-                      label: "Edit",
-                      color: Colors.blue,
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditUserScreen(
-                              user: user,
-                              onSave: (updatedUser) => _editUser(user['id'], updatedUser),
+                      _buildActionButton(
+                        icon: Icons.edit,
+                        label: "Edit",
+                        color: Colors.blue,
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EditUserScreen(
+                                user: user,
+                                onSave: (updatedUser) => _editUser(user['id'], updatedUser),
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildActionButton(
-                      icon: Icons.delete,
-                      label: "Delete",
-                      color: Colors.red,
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _deleteUser(user['id']);
-                      },
-                    ),
-                  ],
-                ),
-              ],
+                          );
+                        },
+                      ),
+                      _buildActionButton(
+                        icon: Icons.delete,
+                        label: "Delete",
+                        color: Colors.red,
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _deleteUser(user['id']);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -490,28 +464,44 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildDetailColumn(IconData icon, String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: Colors.indigo),
-        SizedBox(height: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
+  Widget _buildDetailItem(IconData icon, String label, String value) {
+    return Card(
+      elevation: 1,
+      color: Colors.grey[50],
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: Colors.indigo),
+                SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
-        SizedBox(height: 5),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -537,11 +527,24 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
     );
   }
 
+  void _showSnackBar(String message, Color backgroundColor) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.indigo,
+        backgroundColor: Colors.deepPurpleAccent[400],
         foregroundColor: Colors.white,
         elevation: 0,
         title: isSearching
@@ -560,7 +563,7 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
           },
           autofocus: true,
         )
-            : Text("Users Directory", style: TextStyle(fontWeight: FontWeight.bold)),
+            : Text("Favorite Users", style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: Icon(isSearching ? Icons.close : Icons.search),
@@ -571,42 +574,19 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
             onPressed: _loadUsers,
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          tabs: [
-            Tab(
-              child: Text(
-                "All Users",
-                style: TextStyle(color: Colors.white), // Set text color to white
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.favorite, size: 16,color: Colors.red,),
-                  SizedBox(width: 4),
-                  Text("Favorites",style: TextStyle(color: Colors.white),),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.indigo.withOpacity(0.1), Colors.white],
+            colors: [Colors.deepPurpleAccent[100]!, Colors.white],
             stops: [0.0, 0.3],
           ),
         ),
         child: isLoading
             ? Center(
-          child: CircularProgressIndicator(color: Colors.indigo),
+          child: CircularProgressIndicator(color: Colors.deepPurpleAccent[400]),
         )
             : filteredUsers.isEmpty
             ? _buildEmptyState()
@@ -621,26 +601,18 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            activeFilter == "Favorites" ? Icons.favorite_border : Icons.people_outline,
+            Icons.people_outline,
             size: 80,
             color: Colors.grey,
           ),
           SizedBox(height: 16),
           Text(
-            activeFilter == "Favorites"
-                ? "No favorite users yet"
-                : isSearching
-                ? "No matching users found"
-                : "No users available",
+            isSearching ? "No matching users found" : "No users available",
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[600]),
           ),
           SizedBox(height: 8),
           Text(
-            activeFilter == "Favorites"
-                ? "Tap the heart icon to add favorites"
-                : isSearching
-                ? "Try a different search term"
-                : "Users will appear here when added",
+            isSearching ? "Try a different search term" : "Users will appear here when added",
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             textAlign: TextAlign.center,
           ),
@@ -655,8 +627,9 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
       itemCount: filteredUsers.length,
       itemBuilder: (context, index) {
         final user = filteredUsers[index];
-        bool isFavorite = user['isFavorite'] == 1;
-        int? age = _calculateAge(user['dob']);
+        final int? age = _calculateAge(user['dob']);
+        final bool isFavorite = user['isFavorite'] == 1;
+        final bool isUpdatingFavorite = updatingFavoriteForUserId == user['id'];
 
         return Card(
           margin: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -668,81 +641,116 @@ class _UserListScreenState extends State<UserListScreen> with SingleTickerProvid
             borderRadius: BorderRadius.circular(12),
             onTap: () => _showUserDetails(user),
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              padding: EdgeInsets.all(12),
               child: Row(
                 children: [
+                  // User Avatar
                   Container(
                     width: 60,
                     height: 60,
                     margin: EdgeInsets.only(right: 16),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.indigo.withOpacity(0.3), width: 2),
+                      border: Border.all(color: Colors.red.withOpacity(0.3), width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: ClipOval(
                       child: _getUserImage(user, 60),
                     ),
                   ),
+
+                  // User Info - Only Name, Age and City visible
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Name and Age row
                         Row(
                           children: [
-                            Text(
-                              user['name'],
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            Expanded(
+                              child: Text(
+                                user['name'],
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             if (age != null)
                               Container(
                                 margin: EdgeInsets.only(left: 8),
                                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.indigo.withOpacity(0.1),
+                                  color: Colors.red.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+                                  border: Border.all(color: Colors.red.withOpacity(0.3)),
                                 ),
                                 child: Text(
                                   "$age yrs",
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.indigo,
+                                    color: Colors.red[700],
                                   ),
                                 ),
                               ),
                           ],
                         ),
                         SizedBox(height: 4),
+
+                        // Email
                         Text(
                           user['email'],
                           style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        SizedBox(height: 4),
+
+                        // City
                         if (user['city'] != null && user['city'].toString().isNotEmpty)
-                          Row(
-                            children: [
-                              Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
-                              SizedBox(width: 4),
-                              Text(
-                                user['city'],
-                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                              ),
-                            ],
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Row(
+                              children: [
+                                Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                                SizedBox(width: 4),
+                                Text(
+                                  user['city'],
+                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
                       ],
                     ),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+
+                  // Action buttons
+                  Column(
                     children: [
-                      IconButton(
+                      // Favorite button with loading indicator
+                      isUpdatingFavorite
+                          ? Container(
+                        width: 24,
+                        height: 24,
+                        margin: EdgeInsets.all(8),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.deepPurpleAccent),
+                        ),
+                      )
+                          : IconButton(
                         icon: Icon(
                           isFavorite ? Icons.favorite : Icons.favorite_border,
                           color: isFavorite ? Colors.red : Colors.grey,
                         ),
-                        onPressed: () => _toggleLike(user['id'], isFavorite),
+                        onPressed: () => _toggleFavorite(user['id'], isFavorite),
                       ),
+                      // More options
                       PopupMenuButton<String>(
                         icon: Icon(Icons.more_vert, color: Colors.grey[700]),
                         shape: RoundedRectangleBorder(
